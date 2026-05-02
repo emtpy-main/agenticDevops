@@ -13,10 +13,12 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "amqplib": "^1.0.3",
     "axios": "^1.15.2",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "simple-git": "^3.36.0",
+    "uuid": "^14.0.0",
     "zod": "^4.4.1"
   },
   "devDependencies": {

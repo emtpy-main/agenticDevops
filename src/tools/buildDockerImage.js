@@ -1,10 +1,10 @@
-const { execSync } = require("child_process");
+const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const fixDockerfile = require("./fixDockerfile");
 
 async function buildDockerImage(context) {
-    const { repoPath } = context;
+    const { repoPath, dockerPassword, jobId } = context;
 
     if (!repoPath) {
         throw new Error("repoPath missing in context");
@@ -15,75 +15,96 @@ async function buildDockerImage(context) {
     const imageTag = `${dockerUsername}/${imageName}:latest`;
     const dockerfilePath = path.join(repoPath, "Dockerfile");
 
+    // 🔒 Generate Kaniko Auth Config
+    let kanikoConfigPath = null;
+    if (dockerPassword) {
+        const authString = Buffer.from(`${dockerUsername}:${dockerPassword}`).toString("base64");
+        const configJson = {
+            auths: {
+                "https://index.docker.io/v1/": { auth: authString }
+            }
+        };
+        kanikoConfigPath = path.join(process.cwd(), `tmp-auth-${jobId || "default"}.json`);
+        fs.writeFileSync(kanikoConfigPath, JSON.stringify(configJson));
+    }
+
     let retries = 2;
 
     while (retries >= 0) {
         try {
-            console.log("🏗️ Building Docker image...");
+            console.log("🏗️ Building Docker image with Kaniko...");
 
-            execSync(`docker build -t ${imageTag} .`, {
-                cwd: repoPath,
-                stdio: "pipe" // capture logs
+            const args = [
+                "run", "--rm",
+                "-v", `${repoPath}:/workspace`
+            ];
+
+            if (kanikoConfigPath) {
+                args.push("-v", `${kanikoConfigPath}:/kaniko/.docker/config.json:ro`);
+            }
+
+            args.push(
+                "gcr.io/kaniko-project/executor:latest",
+                "--dockerfile", "Dockerfile",
+                "--destination", imageTag,
+                "--context", "dir:///workspace"
+            );
+
+            await new Promise((resolve, reject) => {
+                const child = spawn("docker", args, { stdio: "pipe" });
+
+                let errorOutput = "";
+
+                child.stdout.on("data", (data) => {
+                    process.stdout.write(data);
+                });
+
+                child.stderr.on("data", (data) => {
+                    process.stderr.write(data);
+                    errorOutput += data.toString();
+                });
+
+                child.on("close", (code) => {
+                    if (code === 0) resolve();
+                    else reject(new Error(errorOutput || `Kaniko failed with code ${code}`));
+                });
             });
 
-            console.log("✅ Docker image built:", imageTag);
+            console.log("✅ Docker image built and pushed:", imageTag);
+            
+            if (kanikoConfigPath && fs.existsSync(kanikoConfigPath)) {
+                fs.unlinkSync(kanikoConfigPath);
+            }
             return { imageTag };
 
         } catch (err) {
             console.error("❌ Docker build failed");
 
-            const errorOutput =
-                err.stderr?.toString() ||
-                err.stdout?.toString() ||
-                err.message;
-
+            const errorOutput = err.message;
             console.log("🔍 Build Error:\n", errorOutput);
 
             if (retries === 0) {
+                if (kanikoConfigPath && fs.existsSync(kanikoConfigPath)) {
+                    fs.unlinkSync(kanikoConfigPath);
+                }
                 throw err;
             }
 
             let dockerfile = fs.readFileSync(dockerfilePath, "utf-8");
-
             const lockFilePath = path.join(repoPath, "package-lock.json");
 
-            // ===============================
-            // 🧠 RULE 1: No lockfile → use npm install
-            // ===============================
             if (!fs.existsSync(lockFilePath)) {
                 console.log("🧠 No package-lock.json → switching to npm install");
-
                 dockerfile = dockerfile.replace(/npm ci/g, "npm install");
-
-            }
-
-            // ===============================
-            // 🧠 RULE 2: npm ci failure → fallback
-            // ===============================
-            else if (
-                errorOutput.includes("npm ci") &&
-                errorOutput.includes("package-lock")
-            ) {
+            } else if (errorOutput.includes("npm ci") && errorOutput.includes("package-lock")) {
                 console.log("🧠 npm ci failed → adding fallback");
-
-                dockerfile = dockerfile.replace(
-                    /npm ci/g,
-                    "npm ci || npm install --omit=dev"
-                );
-            }
-            else if (errorOutput.includes("not found") || errorOutput.includes("apk")) {
+                dockerfile = dockerfile.replace(/npm ci/g, "npm ci || npm install --omit=dev");
+            } else if (errorOutput.includes("not found") || errorOutput.includes("apk")) {
                 console.log("🧠 Alpine issue → switching to node:18");
-
                 dockerfile = dockerfile.replace("node:18-alpine", "node:18");
-
                 fs.writeFileSync(dockerfilePath, dockerfile);
-            }
-            // ===============================
-            // 🤖 LLM fallback (last resort)
-            // ===============================
-            else {
+            } else {
                 console.log("🤖 Using LLM to fix Dockerfile...");
-
                 dockerfile = await fixDockerfile(
                     dockerfile,
                     [`Docker build failed:\n${errorOutput}`],
@@ -91,11 +112,8 @@ async function buildDockerImage(context) {
                 );
             }
 
-            // Save updated Dockerfile
             fs.writeFileSync(dockerfilePath, dockerfile);
-
             retries--;
-
             console.log("🔁 Retry build attempt:", 2 - retries);
         }
     }

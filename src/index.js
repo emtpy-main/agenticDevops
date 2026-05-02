@@ -3,23 +3,16 @@ require("dotenv").config();
 const express = require("express");
 const { loadEnv } = require("./config/env");
 
-const createPlanner = require("./agent/planner");
-const executeStep = require("./agent/executor");
-const runAgent = require("./agent/controller");
+const { connectQueue, addJob } = require("./queue");
 
 const env = loadEnv();
 
 const app = express();
 app.use(express.json());
 
-// 🔧 Initialize
-let planner;
-
+// 🔧 Initialize Queue
 (async () => {
-  planner = await createPlanner({
-    groqApiKey: env.GROQ_API_KEY,
-    devMode: env.DEV_MODE
-  });
+  await connectQueue();
 })();
 
 app.post("/run", async (req, res) => {
@@ -30,7 +23,7 @@ app.post("/run", async (req, res) => {
       return res.status(400).json({ error: "Goal and githubRepo required" });
     }
 
-    const result = await runAgent({
+    const jobId = await addJob({
       goal,
       dockerUsername,
       dockerPassword,
@@ -38,12 +31,13 @@ app.post("/run", async (req, res) => {
       gitToken,
       renderWebhook,
       imageName
-    }, {
-      planner,
-      executor: executeStep
     });
 
-    res.json(result);
+    res.json({
+      status: "queued",
+      message: "message waiting currently server have load",
+      jobId
+    });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: "Agent failed" });

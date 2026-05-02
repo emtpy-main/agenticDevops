@@ -3,7 +3,7 @@ const path = require("path");
 const fs = require("fs");
 
 async function cloneRepo(context) {
-  let { repoUrl, gitToken } = context;
+  let { repoUrl, gitToken, jobId } = context;
 
   if (!repoUrl) {
     throw new Error("Repository URL is required");
@@ -17,7 +17,7 @@ async function cloneRepo(context) {
   // Handle case where URL might now have token, extract name properly
   const repoName = context.repoUrl.split("/").pop().replace(".git", "");
   const baseDir = path.join(process.cwd(), "repos");
-  const targetDir = path.join(baseDir, repoName);
+  const targetDir = path.join(baseDir, `${repoName}-${jobId || "default"}`);
 
   fs.mkdirSync(baseDir, { recursive: true });
 
