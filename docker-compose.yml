@@ -1,0 +1,27 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "check_running" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # Allows backend to run Docker commands
+      - ./repos:/app/repos # Persist cloned repos
+    environment:
+      - PORT=5000
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - DOCKERHUB_USERNAME=${DOCKERHUB_USERNAME}
+      - RABBITMQ_URL=amqp://rabbitmq
+    depends_on:
+      rabbitmq:
+        condition: service_healthy

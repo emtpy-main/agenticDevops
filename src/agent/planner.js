@@ -30,7 +30,10 @@ function createPlanner({ groqApiKey , devMode }) {
                 { step: "clone_repo" },
                 { step: "analyze_repo" },
                 { step: "create_dockerignore" },
-                { step: "generate_dockerfile" }
+                { step: "generate_dockerfile" },
+                { step: "build_docker" },
+                { step: "git_push" },
+                { step: "push_docker" }
             ];
 
             return PlanSchema.parse(mockPlan);
@@ -58,6 +61,9 @@ validate_deploy
 If you output anything else, the system will reject it.
 
 Goal: ${goal}
+
+IMPORTANT: If the goal involves building or containerizing, you MUST include 'git_push' AFTER 'build_docker' to save the verified Dockerfile to the repository.
+Typical flow: clone_repo -> analyze_repo -> generate_dockerfile -> build_docker -> git_push -> push_docker.
 `;
 
         try {

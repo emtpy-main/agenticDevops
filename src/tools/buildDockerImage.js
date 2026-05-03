@@ -4,7 +4,7 @@ const path = require("path");
 const fixDockerfile = require("./fixDockerfile");
 
 async function buildDockerImage(context) {
-    const { repoPath, dockerPassword, jobId } = context;
+    const { repoPath, dockerPassword, jobId, logger } = context;
 
     if (!repoPath) {
         throw new Error("repoPath missing in context");
@@ -56,12 +56,20 @@ async function buildDockerImage(context) {
                 let errorOutput = "";
 
                 child.stdout.on("data", (data) => {
-                    process.stdout.write(data);
+                    const line = data.toString().trim();
+                    if (line) {
+                        process.stdout.write(data);
+                        if (logger) logger.log(line, "info");
+                    }
                 });
 
                 child.stderr.on("data", (data) => {
-                    process.stderr.write(data);
-                    errorOutput += data.toString();
+                    const line = data.toString().trim();
+                    if (line) {
+                        process.stderr.write(data);
+                        if (logger) logger.log(line, "error");
+                        errorOutput += data.toString();
+                    }
                 });
 
                 child.on("close", (code) => {
@@ -72,10 +80,16 @@ async function buildDockerImage(context) {
 
             console.log("✅ Docker image built and pushed:", imageTag);
             
+            // 🔗 Update deep link in Firestore
+            const dockerHubUrl = `https://hub.docker.com/r/${dockerUsername}/${imageName}`;
+            if (logger) {
+                await logger.updateStatus("in-progress", { dockerHubUrl });
+            }
+
             if (kanikoConfigPath && fs.existsSync(kanikoConfigPath)) {
                 fs.unlinkSync(kanikoConfigPath);
             }
-            return { imageTag };
+            return { imageTag, dockerHubUrl };
 
         } catch (err) {
             console.error("❌ Docker build failed");

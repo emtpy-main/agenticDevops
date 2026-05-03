@@ -70,6 +70,10 @@ async function executeStep(step, context) {
         throw new Error(`❌ Unauthorized step: ${step.step}`);
     }
 
+    if (context.logger) {
+        context.logger.log(`Executing: ${step.step}...`);
+    }
+
     return await fn(context);
 }
 

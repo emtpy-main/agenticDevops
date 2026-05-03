@@ -15,7 +15,7 @@ async function cloneRepo(context) {
   }
 
   // Handle case where URL might now have token, extract name properly
-  const repoName = context.repoUrl.split("/").pop().replace(".git", "");
+  const repoName = context.repoUrl.replace(/\/$/, "").split("/").pop().replace(".git", "");
   const baseDir = path.join(process.cwd(), "repos");
   const targetDir = path.join(baseDir, `${repoName}-${jobId || "default"}`);
 
