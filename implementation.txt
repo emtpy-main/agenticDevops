@@ -1,0 +1,142 @@
+# Agentic DevOps: AWS EC2 Deployment Guide
+
+Follow these steps to deploy your backend on an AWS EC2 instance (Ubuntu 22.04 Free Tier).
+
+---
+
+## Phase 1: AWS Console (Launch Instance)
+1. **Launch Instance**: Go to EC2 Dashboard -> Launch Instance.
+2. **Name**: `agentic-devops-backend`.
+3. **OS**: Choose **Ubuntu 22.04 LTS** (64-bit x86).
+4. **Instance Type**: `t2.micro` or `t3.micro` (Free Tier).
+5. **Key Pair**: Create a new key pair (.pem) and save it.
+6. **Network Settings**:
+   - Allow SSH (Port 22) from "Anywhere".
+   - Add "Custom TCP Rule" -> Port **5000** (Backend API).
+   - Add "HTTP" -> Port **80**.
+
+---
+
+## Phase 2: Server Preparation (SSH)
+Connect to your instance (Replace with your IP and Key):
+`ssh -i your-key.pem ubuntu@your-ec2-ip`
+
+Run these commands on the server:
+
+### 1. Install Docker
+```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg lsb-release
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+```
+
+### 2. Create Swap File (Crucial for 1GB RAM)
+This prevents the server from crashing during Docker builds.
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+---
+
+## Phase 3: Deploy Application
+
+### 1. Clone your Repo
+```bash
+git clone https://github.com/emtpy-main/agenticDevops.git
+cd agenticDevops
+```
+
+### 2. Configure Environment
+Create a `.env` file:
+```bash
+nano .env
+```
+Paste your configuration (Update with your keys):
+```env
+PORT=5000
+GROQ_API_KEY=your_key
+DOCKERHUB_USERNAME=your_username
+RABBITMQ_URL=amqp://rabbitmq
+HOST_REPOS_PATH=/home/ubuntu/agenticDevOps/repos
+```
+*(Press CTRL+O, ENTER, CTRL+X to save)*
+
+### 3. Add Firebase Credentials
+Since `serviceAccountKey.json` is not in GitHub, you must create it manually:
+```bash
+nano serviceAccountKey.json
+```
+Paste the JSON content of your Firebase Service Account key here, then save and exit (CTRL+O, ENTER, CTRL+X).
+
+### 4. Launch with Docker Compose
+```bash
+sudo docker compose up --build -d
+```
+
+---
+
+## Phase 4: Verification
+- **API Status**: Visit `http://your-ec2-ip:5000`
+- **Logs**: `sudo docker compose logs -f backend`
+
+---
+
+---
+
+## Phase 5: Troubleshooting
+- **Permission Error**: If you get a Docker socket error, run:
+  `sudo chmod 666 /var/run/docker.sock`
+- **RabbitMQ**: The dashboard is at `http://your-ec2-ip:15672` (User: `guest` / Pass: `guest`).
+
+---
+
+## Phase 6: Nginx Reverse Proxy & SSL (Production)
+
+### 1. Install Nginx
+```bash
+sudo apt update
+sudo apt install -y nginx
+```
+
+### 2. Configure Domain
+```bash
+sudo nano /etc/nginx/sites-available/deploydash
+```
+Paste this (Replace with your domain):
+```nginx
+server {
+    listen 80;
+    server_name deploydash-pratik.duckdns.org;
+
+    location / {
+        proxy_pass http://localhost:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+```
+
+### 3. Enable Config
+```bash
+sudo ln -s /etc/nginx/sites-available/deploydash /etc/nginx/sites-enabled/
+sudo rm /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+### 4. Setup SSL (HTTPS)
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d deploydash-pratik.duckdns.org
+```

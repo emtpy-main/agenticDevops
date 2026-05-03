@@ -81,6 +81,10 @@ app.post("/run", async (req, res) => {
   }
 });
 
+app.get('/', (req, res) => {
+  res.json({ status: "Agentic DevOps is Running", version: "1.0.0" });
+});
+
 server.listen(env.PORT || 5000, () => {
   console.log(`Server running on port ${env.PORT}`);
 });

@@ -15,6 +15,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
+      - .:/app # Mount project root
       - /var/run/docker.sock:/var/run/docker.sock # Allows backend to run Docker commands
       - ./repos:/app/repos # Persist cloned repos
     environment:
@@ -22,6 +23,7 @@ services:
       - GROQ_API_KEY=${GROQ_API_KEY}
       - DOCKERHUB_USERNAME=${DOCKERHUB_USERNAME}
       - RABBITMQ_URL=amqp://rabbitmq
+      - HOST_REPOS_PATH=${HOST_REPOS_PATH}
     depends_on:
       rabbitmq:
         condition: service_healthy
